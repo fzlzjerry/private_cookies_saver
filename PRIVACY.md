@@ -1,6 +1,6 @@
 # Privacy Policy for Private Cookies Saver
 
-Last updated: [Current Date]
+Last updated: Dec 31, 2024
 
 ## Overview
 Private Cookies Saver is a Chrome extension designed with privacy in mind. Its sole purpose is to help users save and restore cookies from their private browsing sessions. This privacy policy explains how we handle your data.
