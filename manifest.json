@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Private Cookies Saver",
+  "version": "1.0",
+  "description": "Save and restore cookies from private browsing sessions",
+  "permissions": [
+    "cookies",
+    "storage",
+    "tabs",
+    "activeTab",
+    "downloads"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "incognito": "split"
+} 

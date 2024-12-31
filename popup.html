@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Private Cookies Saver</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Private Cookies Saver</h1>
+    <div class="buttons">
+      <button id="saveCookies" class="btn">保存 Cookies</button>
+      <label for="fileInput" class="btn file-label">选择文件</label>
+      <input type="file" id="fileInput" accept=".json" style="display: none;">
+      <button id="restoreCookies" class="btn">恢复 Cookies</button>
+    </div>
+    <div id="status" class="status"></div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html> 
