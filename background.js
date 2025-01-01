@@ -1,4 +1,4 @@
-// 检查是否在隐私模式下
+// Check if in incognito mode
 async function checkIncognitoMode() {
   return new Promise((resolve) => {
     chrome.windows.getCurrent((window) => {
@@ -7,25 +7,25 @@ async function checkIncognitoMode() {
   });
 }
 
-// 保存所有域名的cookies
+// Get all cookies from all domains
 async function getAllCookies() {
   return new Promise((resolve, reject) => {
     try {
       chrome.cookies.getAll({}, (cookies) => {
         if (chrome.runtime.lastError) {
-          reject(new Error(`获取Cookies失败: ${chrome.runtime.lastError.message}`));
+          reject(new Error(`Failed to get cookies: ${chrome.runtime.lastError.message}`));
           return;
         }
-        console.log(`成功获取 ${cookies.length} 个cookies`);
+        console.log(`Successfully retrieved ${cookies.length} cookies`);
         resolve(cookies);
       });
     } catch (error) {
-      reject(new Error(`获取Cookies时发生异常: ${error.message}`));
+      reject(new Error(`Exception while getting cookies: ${error.message}`));
     }
   });
 }
 
-// 删除指定cookie
+// Delete specified cookie
 async function removeCookie(cookie) {
   const protocol = cookie.secure ? "https:" : "http:";
   const url = `${protocol}//${cookie.domain}${cookie.path}`;
@@ -41,20 +41,21 @@ async function removeCookie(cookie) {
   });
 }
 
-// 设置cookie
+// Set cookie
 async function setCookie(cookie) {
   try {
     const protocol = cookie.secure ? "https:" : "http:";
     let domain = cookie.domain;
     
-    // 处理域名前的点号
+    // Handle leading dot in domain
     if (domain.startsWith('.')) {
       domain = domain.substring(1);
     }
     
     const url = `${protocol}//${domain}${cookie.path}`;
+    console.log(`Attempting to set cookie: ${cookie.name}@${domain} (${url})`);
     
-    // 准备cookie设置
+    // Prepare cookie settings
     const cookieDetails = {
       url: url,
       name: cookie.name,
@@ -67,7 +68,7 @@ async function setCookie(cookie) {
       expirationDate: cookie.expirationDate || (Date.now() / 1000 + 365 * 24 * 60 * 60)
     };
 
-    // 移除undefined的属性
+    // Remove undefined properties
     Object.keys(cookieDetails).forEach(key => 
       cookieDetails[key] === undefined && delete cookieDetails[key]
     );
@@ -81,38 +82,64 @@ async function setCookie(cookie) {
           const result = await new Promise((res) => {
             chrome.cookies.set(cookieDetails, (details) => {
               if (chrome.runtime.lastError) {
-                console.warn(`尝试 ${retryCount + 1}: 设置cookie失败: ${cookie.name}@${cookie.domain}`, chrome.runtime.lastError);
-                res(null);
+                const errorMsg = chrome.runtime.lastError.message;
+                console.warn(`Attempt ${retryCount + 1}: Failed to set cookie:`, {
+                  name: cookie.name,
+                  domain: cookie.domain,
+                  error: errorMsg,
+                  details: cookieDetails
+                });
+                res({ success: false, error: errorMsg });
               } else {
-                res(details);
+                console.log(`Successfully set cookie: ${cookie.name}@${domain}`);
+                res({ success: true, details });
               }
             });
           });
 
-          if (result) {
-            resolve(result);
+          if (result.success) {
+            resolve(result.details);
           } else if (retryCount < maxRetries) {
             retryCount++;
-            // 修改重试策略
+            // Modify retry strategy
             if (retryCount === 1) {
-              // 第一次重试：移除 sameSite
+              // First retry: remove sameSite
               delete cookieDetails.sameSite;
+              console.log(`Retry ${retryCount}: Removed sameSite attribute - ${cookie.name}`);
             } else if (retryCount === 2) {
-              // 第二次重试：设置为 no_restriction
+              // Second retry: set to no_restriction
               cookieDetails.sameSite = 'no_restriction';
+              console.log(`Retry ${retryCount}: Set sameSite to no_restriction - ${cookie.name}`);
             } else if (retryCount === 3) {
-              // 第三次重试：移除 domain，仅使用 url
+              // Third retry: remove domain, use url only
               delete cookieDetails.domain;
+              console.log(`Retry ${retryCount}: Removed domain attribute - ${cookie.name}`);
             }
             
-            console.log(`重试第 ${retryCount} 次设置cookie: ${cookie.name}`);
             await trySetCookie();
           } else {
-            console.error(`设置cookie失败，已重试${maxRetries}次:`, cookie.name, cookie.domain);
+            const errorInfo = {
+              cookie: {
+                name: cookie.name,
+                domain: cookie.domain,
+                path: cookie.path
+              },
+              lastError: result.error,
+              attempts: retryCount + 1,
+              finalConfig: cookieDetails
+            };
+            console.error('Failed to set cookie after all retries:', errorInfo);
             resolve(null);
           }
         } catch (error) {
-          console.error('设置cookie时发生错误:', error);
+          console.error('Exception while setting cookie:', {
+            cookie: {
+              name: cookie.name,
+              domain: cookie.domain
+            },
+            error: error.message,
+            stack: error.stack
+          });
           resolve(null);
         }
       };
@@ -120,22 +147,29 @@ async function setCookie(cookie) {
       await trySetCookie();
     });
   } catch (error) {
-    console.error('设置cookie时发生错误:', error);
+    console.error('Critical error while setting cookie:', {
+      cookie: {
+        name: cookie.name,
+        domain: cookie.domain
+      },
+      error: error.message,
+      stack: error.stack
+    });
     throw error;
   }
 }
 
-// 保存cookies到文件
+// Save cookies to file
 async function saveCookiesToFile(cookies) {
   try {
-    // 过滤掉可能的无效cookie
+    // Filter out invalid cookies
     const validCookies = cookies.filter(cookie => 
       cookie && cookie.domain && cookie.name && cookie.value
     );
 
-    console.log(`过滤后剩余 ${validCookies.length} 个有效cookies`);
+    console.log(`${validCookies.length} valid cookies after filtering`);
 
-    // 为每个cookie添加额外信息以便调试
+    // Add extra metadata for debugging
     const cookiesWithMeta = validCookies.map(cookie => ({
       ...cookie,
       _meta: {
@@ -155,40 +189,40 @@ async function saveCookiesToFile(cookies) {
         saveAs: true
       }, (downloadId) => {
         if (chrome.runtime.lastError) {
-          console.error('下载文件时出错:', chrome.runtime.lastError);
-          reject(new Error(`保存文件失败: ${chrome.runtime.lastError.message}`));
+          console.error('Error downloading file:', chrome.runtime.lastError);
+          reject(new Error(`Failed to save file: ${chrome.runtime.lastError.message}`));
         } else {
           resolve(downloadId);
         }
       });
     });
   } catch (error) {
-    console.error('创建文件时出错:', error);
-    throw new Error(`创建Cookie文件失败: ${error.message}`);
+    console.error('Error creating file:', error);
+    throw new Error(`Failed to create cookie file: ${error.message}`);
   }
 }
 
-// 监听来自popup的消息
+// Listen for messages from popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "saveCookies") {
     checkIncognitoMode().then(async (isIncognito) => {
       if (!isIncognito) {
-        sendResponse({ success: false, message: "只能在隐私模式下使用" });
+        sendResponse({ success: false, message: "This extension can only be used in incognito mode" });
         return;
       }
 
       try {
-        console.log('开始获取cookies...');
+        console.log('Starting to get cookies...');
         const cookies = await getAllCookies();
-        console.log('开始保存cookies到文件...');
+        console.log('Starting to save cookies to file...');
         await saveCookiesToFile(cookies);
-        console.log('Cookies保存成功');
-        sendResponse({ success: true, message: "Cookies已保存到文件" });
+        console.log('Cookies saved successfully');
+        sendResponse({ success: true, message: "Cookies have been saved to file" });
       } catch (error) {
-        console.error('保存Cookies时发生错误:', error);
+        console.error('Error saving cookies:', error);
         sendResponse({ 
           success: false, 
-          message: `保存Cookies时发生错误: ${error.message}`,
+          message: `Error saving cookies: ${error.message}`,
           error: error.message 
         });
       }
@@ -199,32 +233,32 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "restoreCookies") {
     checkIncognitoMode().then(async (isIncognito) => {
       if (!isIncognito) {
-        sendResponse({ success: false, message: "只能在隐私模式下使用" });
+        sendResponse({ success: false, message: "This extension can only be used in incognito mode" });
         return;
       }
 
       try {
         const cookies = request.cookies;
         if (!cookies || cookies.length === 0) {
-          sendResponse({ success: false, message: "没有找到要恢复的Cookies" });
+          sendResponse({ success: false, message: "No cookies found to restore" });
           return;
         }
         
-        console.log(`准备恢复 ${cookies.length} 个cookies...`);
+        console.log(`Preparing to restore ${cookies.length} cookies...`);
         
-        // 先清除当前所有cookies
+        // Clear current cookies first
         const currentCookies = await getAllCookies();
-        console.log(`清除当前的 ${currentCookies.length} 个cookies...`);
+        console.log(`Clearing current ${currentCookies.length} cookies...`);
         for (const cookie of currentCookies) {
           await removeCookie(cookie);
         }
         
-        // 恢复保存的cookies
+        // Restore saved cookies
         let successCount = 0;
         let errorCount = 0;
         const errors = [];
         
-        // 按域名分组cookies
+        // Group cookies by domain
         const cookiesByDomain = {};
         cookies.forEach(cookie => {
           const domain = cookie.domain.startsWith('.') ? cookie.domain.substring(1) : cookie.domain;
@@ -234,16 +268,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           cookiesByDomain[domain].push(cookie);
         });
 
-        // 按域名顺序恢复cookies
+        // Restore cookies by domain
         for (const [domain, domainCookies] of Object.entries(cookiesByDomain)) {
-          console.log(`正在恢复域名 ${domain} 的 ${domainCookies.length} 个cookies...`);
+          console.log(`Restoring ${domainCookies.length} cookies for domain ${domain}...`);
           for (const cookie of domainCookies) {
             try {
               const result = await setCookie(cookie);
               if (result) {
                 successCount++;
               } else {
-                throw new Error('Cookie设置失败');
+                throw new Error('Failed to set cookie');
               }
             } catch (error) {
               errorCount++;
@@ -255,23 +289,23 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 },
                 error: error.message
               });
-              console.error('恢复cookie失败:', cookie, error);
+              console.error('Failed to restore cookie:', cookie, error);
             }
           }
         }
         
-        console.log(`恢复完成: 成功=${successCount}, 失败=${errorCount}`);
+        console.log(`Restore completed: success=${successCount}, failed=${errorCount}`);
         
         if (successCount === 0) {
           sendResponse({ 
             success: false, 
-            message: "没有成功恢复任何Cookies",
+            message: "Failed to restore any cookies",
             details: { errors }
           });
         } else if (successCount < cookies.length) {
           sendResponse({ 
             success: true, 
-            message: `部分Cookies已恢复 (${successCount}/${cookies.length})`,
+            message: `Partially restored cookies (${successCount}/${cookies.length})`,
             details: { 
               total: cookies.length,
               success: successCount,
@@ -280,13 +314,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             }
           });
         } else {
-          sendResponse({ success: true, message: "所有Cookies已恢复" });
+          sendResponse({ success: true, message: "All cookies have been restored" });
         }
       } catch (error) {
-        console.error('恢复Cookies时发生错误:', error);
+        console.error('Error restoring cookies:', error);
         sendResponse({ 
           success: false, 
-          message: `恢复Cookies时发生错误: ${error.message}`,
+          message: `Error restoring cookies: ${error.message}`,
           error: error.message
         });
       }

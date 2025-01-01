@@ -8,25 +8,46 @@ document.addEventListener('DOMContentLoaded', async () => {
   let selectedCookies = null;
 
   function showStatus(message, isError = false, details = null) {
-    statusDiv.textContent = message;
-    if (details) {
-      console.error('详细错误信息:', details);
+    let displayMessage = message;
+    
+    if (isError && details) {
+      if (details.errors && Array.isArray(details.errors)) {
+        // If there are specific cookie errors
+        const failedCount = details.errors.length;
+        displayMessage = `${message}\nFailed count: ${failedCount}`;
+        
+        // Show detailed error information in console
+        console.group('Cookie Setting Failures:');
+        details.errors.forEach((error, index) => {
+          console.log(`${index + 1}. ${error.cookie.name}@${error.cookie.domain}: ${error.error}`);
+        });
+        console.groupEnd();
+      } else if (details.total && details.failed) {
+        // If there are overall statistics
+        displayMessage = `${message}\nSuccess: ${details.success}, Failed: ${details.failed}`;
+      }
+      
+      // Show complete error details in console
+      console.error('Detailed error information:', details);
     }
+
+    statusDiv.innerHTML = displayMessage.replace(/\n/g, '<br>');
     statusDiv.className = `status ${isError ? 'error' : 'success'}`;
-    // 错误信息显示时间延长
+    
+    // Extended display time for error messages
     setTimeout(() => {
       statusDiv.textContent = '';
       statusDiv.className = 'status';
-    }, isError ? 5000 : 3000);
+    }, isError ? 8000 : 3000);  // Show errors for 8 seconds
   }
 
-  // 检查是否在隐私模式下
+  // Check if in incognito mode
   chrome.windows.getCurrent((window) => {
     if (!window.incognito) {
       saveCookiesBtn.disabled = true;
       restoreCookiesBtn.disabled = true;
       fileLabel.classList.add('disabled');
-      showStatus("此扩展只能在隐私模式下使用", true);
+      showStatus("This extension can only be used in incognito mode", true);
       return;
     }
 
@@ -45,21 +66,27 @@ document.addEventListener('DOMContentLoaded', async () => {
           if (Array.isArray(cookies)) {
             selectedCookies = cookies;
             fileLabel.classList.add('selected');
-            fileLabel.textContent = file.name;
-            showStatus(`已选择Cookie文件 (包含 ${cookies.length} 个cookies)`);
+            fileLabel.textContent = `${file.name} (${cookies.length} cookies)`;
+            showStatus(`Cookie file selected\nContains ${cookies.length} cookies`);
           } else {
-            throw new Error("无效的Cookie文件格式");
+            throw new Error("Invalid cookie file format");
           }
         } catch (error) {
-          console.error('读取文件错误:', error);
-          showStatus("无效的Cookie文件", true, error);
+          console.error('Error reading file:', error);
+          showStatus("Invalid cookie file format", true, {
+            error: error.message,
+            file: file.name
+          });
           fileLabel.classList.remove('selected');
           selectedCookies = null;
         }
       };
       
       reader.onerror = (error) => {
-        showStatus("读取文件时发生错误", true, error);
+        showStatus("Error reading file", true, {
+          error: error.message,
+          file: file.name
+        });
         fileLabel.classList.remove('selected');
         selectedCookies = null;
       };
@@ -69,26 +96,29 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     saveCookiesBtn.addEventListener('click', () => {
       saveCookiesBtn.disabled = true;
-      showStatus("正在保存Cookies...");
+      showStatus("Saving cookies...");
       
       chrome.runtime.sendMessage({ action: 'saveCookies' }, (response) => {
         saveCookiesBtn.disabled = false;
         if (response.success) {
           showStatus(response.message);
         } else {
-          showStatus(response.message, true, response.error);
+          showStatus(response.message, true, {
+            error: response.error,
+            details: response.details
+          });
         }
       });
     });
 
     restoreCookiesBtn.addEventListener('click', () => {
       if (!selectedCookies) {
-        showStatus("请先选择Cookie文件", true);
+        showStatus("Please select a cookie file first", true);
         return;
       }
 
       restoreCookiesBtn.disabled = true;
-      showStatus("正在恢复Cookies...");
+      showStatus("Restoring cookies...");
 
       chrome.runtime.sendMessage({ 
         action: 'restoreCookies',
@@ -96,12 +126,20 @@ document.addEventListener('DOMContentLoaded', async () => {
       }, (response) => {
         restoreCookiesBtn.disabled = false;
         if (response.success) {
-          showStatus(response.message);
+          showStatus(
+            response.message,
+            false,
+            response.details
+          );
           if (response.details) {
-            console.log('恢复详情:', response.details);
+            console.log('Restore details:', response.details);
           }
         } else {
-          showStatus(response.message, true, response.details || response.error);
+          showStatus(
+            response.message, 
+            true, 
+            response.details || { error: response.error }
+          );
         }
       });
     });
