@@ -5,9 +5,6 @@
   "description": "Save and restore cookies from private browsing sessions",
   "permissions": [
     "cookies",
-    "storage",
-    "tabs",
-    "activeTab",
     "downloads"
   ],
   "host_permissions": [
